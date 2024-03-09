@@ -1,0 +1,61 @@
+import cv2
+import numpy as np
+import pytesseract
+
+# Load YOLOv4-tiny model
+net = cv2.dnn.readNet("path/to/yolov4-tiny.weights", "path/to/yolov4-tiny.cfg")
+layer_names = net.getUnconnectedOutLayersNames()
+
+def detect_license_plate(frame):
+    height, width, _ = frame.shape
+
+    # Convert frame to blob
+    blob = cv2.dnn.blobFromImage(frame, 1/255.0, (416, 416), swapRB=True, crop=False)
+    net.setInput(blob)
+    detections = net.forward(layer_names)
+
+    for detection in detections:
+        for obj in detection:
+            scores = obj[5:]
+            class_id = np.argmax(scores)
+            confidence = scores[class_id]
+
+            if confidence > 0.5 and class_id == 2:  # Class 2 corresponds to car in COCO dataset
+                center_x, center_y, w, h = (obj[0:4] * np.array([width, height, width, height])).astype(int)
+                x, y = int(center_x - w/2), int(center_y - h/2)
+
+                # Crop license plate region
+                plate_roi = frame[y:y+h, x:x+w]
+
+                # Apply OCR to recognize characters
+                plate_text = pytesseract.image_to_string(plate_roi, config='--psm 8 --oem 3')
+
+                # Draw bounding box and display recognized text
+                cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
+                cv2.putText(frame, f"Plate: {plate_text}", (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+
+    return frame
+
+def main():
+    cap = cv2.VideoCapture(0)  # Use 0 for built-in camera or specify the camera source
+
+    while True:
+        ret, frame = cap.read()
+
+        if not ret:
+            break
+
+        # Detect license plate in the frame
+        frame = detect_license_plate(frame)
+
+        # Display the frame with license plate information
+        cv2.imshow('ALPR', frame)
+
+        if cv2.waitKey(1) & 0xFF == 27:  # Press 'Esc' to exit
+            break
+
+    cap.release()
+    cv2.destroyAllWindows()
+
+if __name__ == "__main__":
+    main()
